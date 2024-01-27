@@ -1,6 +1,12 @@
-import express from "express";
-import { createServer } from "http";
-import { Server } from "socket.io";
+// esModule
+// import express from "express";
+// import { createServer } from "http";
+// import { Server } from "socket.io";
+
+// commonJs
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 
 // Express
 const app = express();
