@@ -1,61 +1,121 @@
-// esModule
-// import express from "express";
-// import { createServer } from "http";
-// import { Server } from "socket.io";
-
-// commonJs
 const express = require('express');
 const { createServer } = require('http');
-const { Server } = require('socket.io');
+const jwt = require("jsonwebtoken");
+const { expressjwt } = require('express-jwt');
+const { v4: uuidv4 } = require('uuid');
+// WebSocket
+require('./websocket');
 
 // Express
 const app = express();
+app.use(express.json());
 // Create Http Server
 const httpServer = createServer(app);
-// Create Socket Server
-const io = new Server(httpServer, { /* options */ });
+
+// token secretKey
+const secretKey = 'DEMO';
+// 暫存用戶放置處
+const users = [];
+
+// Handling expired tokens
+app.use(expressjwt({
+     secret: secretKey,
+     algorithms: ['HS256'],
+     onExpired: async (req, err) => {
+        if (new Date() - err.inner.expiredAt < 5000) { return; }
+        throw err;
+    }}
+).unless({ path: [/^\/api\//] }));
+
+// Error handling
+app.use((err, req, res, next) => {
+    if (err.name === "UnauthorizedError") {
+        res.status(401).send("invalid token...");
+    } else {
+        next(err);
+    }
+});
+
+/** Login Api */
+app.post('/api/login', (req, res) => {
+    const payload = req.body;
+    const {username, password} = payload;
+
+    try {
+        const user = users.find(data => data.username === username);
+        if(!user) throw new Error('查無用戶');
+    
+        if(user.password !== password) throw new Error('密碼錯誤');
+        
+        const userData = {
+            uuid: user.uuid,
+            username: user.username,
+            nickname: user.nickname,
+        };
+
+        const token = jwt.sign(userData, secretKey, { expiresIn: '9999999s' });
+    
+        return res.status(200).send({
+            message: "登入成功!",
+            token,
+        });
+    } catch(e) {
+        return res.status(400).send({
+            message: e.message,
+        });
+    }
+})
+
+/** Register User Api */
+app.post('/api/register', (req, res) => {
+    const payload = req.body;
+    const { username, password, nickname } = payload;
+
+    try {
+        if(!username || !password || !nickname) throw new Error('資料錯誤');
+
+        // Find User
+        const hasUser = users.some(user => user.username === username);
+        // Validate
+        if(hasUser) throw new Error('已有相同用戶，無法建立');
+        // Create User
+        const user = {
+            uuid: uuidv4(),
+            username: username,
+            password: password,
+            nickname: nickname
+        }
+        users.push(user);
+
+        const userData = {
+            uuid: user.uuid,
+            username: user.username,
+            nickname: user.nickname,
+        };
+
+        const token = jwt.sign(userData, secretKey, { expiresIn: '9999999s' });
+    
+        return res.status(200).send({
+            message: "註冊成功!",
+            token,
+        });
+    } catch(e) {
+        return res.status(400).send({
+            message: e.message,
+        });
+    }
+})
+
+/** Get User Api */
+app.get("/user", (req, res) => {
+	return res.status(200).send({
+		message: "獲取使用者資料成功",
+		data: req.auth
+	});
+});
 
 // Http Respond
 app.use('/', (req, res) => res.status(200).send('HEALTHY'));
-
-let users = [];
-
-// Socket Connect
-io.on("connection", (socket) => {
-    // 向所有人廣播更新目前最新的 Users
-    const updateUsers = () => {
-        io.sockets.emit('users', users);
-    }
-
-    // Create User
-    socket.on('createUser', (username) => {
-        if(users.indexOf(username) < 0) {
-            // 向 Client Side 發送訊息
-            socket.emit('chat', 'SERVER', '歡迎光臨 ' + username);
-            // Socket 設定 Client Username
-            socket.username = username;
-            // 插入新的 username 到 users
-            users.push(socket.username);
-            // 向所有人廣播更新目前最新的 Users
-            updateUsers();
-        }
-    });
-
-    // 向所有 Client 發送訊息
-    socket.on('sendMessage', (message) => {
-        io.sockets.emit('newMessage', { msg: message, nick: socket.username });
-    });
-
-    // Client 斷線
-    socket.on('disconnect', (data) => {
-        if (!socket.username) return;
-        io.sockets.emit('chat', 'SERVER', socket.username + ' 離開了聊天室～');
-        // 移除 username 從 users
-        users.splice(users.indexOf(socket.username), 1);
-        // 向所有人廣播更新目前最新的 Users
-        updateUsers();
-    });
-});
 
 // Server listen
 httpServer.listen(3000, () => {
