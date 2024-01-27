@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon app.js"
+    "start": "nodemon app.js",
+    "server": "babel-node app.js"
   },
   "author": "",
   "license": "ISC",
@@ -19,6 +20,10 @@
     "utf-8-validate": "^5.0.10"
   },
   "devDependencies": {
+    "@babel/cli": "^7.23.9",
+    "@babel/core": "^7.23.9",
+    "@babel/node": "^7.23.9",
+    "@babel/preset-env": "^7.23.9",
     "nodemon": "^3.0.3"
   }
 }
