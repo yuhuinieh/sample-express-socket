@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const { expressjwt } = require('express-jwt');
 const { v4: uuidv4 } = require('uuid');
 // WebSocket
-require('./websocket');
+// require('./websocket');
 
 // Express
 const app = express();
