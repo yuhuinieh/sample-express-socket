@@ -1,28 +1,14 @@
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const { expressjwt } = require('express-jwt');
+const { ClientMessageType } = require('./socketType');
 
 const wss = new WebSocket.Server({ port: 8080 });
 
-// 暫存用戶放置處
+// 暫存資料
 const users = [];
-
 const onlineUser = [];
-
-// const onlineRoomUser = [];
-
-// 暫存訊息放置處
 const cacheMessages = [];
-
-const ClientMessageType = {
-    Open: 'open',
-    Close: 'close',
-    Login: 'login',
-    Register: 'register',
-    EnterRoom: 'enterRoom',
-    LeaveRoom: 'leaveRoom',
-    Message: 'message',
-};
 
 const handleLogin = (data) => {
     if(!data.username || !data.password) throw new Error('資料錯誤');
