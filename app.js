@@ -152,7 +152,7 @@ io.on("connection", (socket) => {
             onlineUsers.splice(findOnlineUserIndex, 1);
         }
         socket.user = undefined;
-        io.sockets.emit(SocketEmitEventType.RemoveOnlineUser, onlineUsers);
+        io.sockets.emit(SocketEmitEventType.OnlineUsers, onlineUsers);
     });
 });
 
