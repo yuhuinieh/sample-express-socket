@@ -7,7 +7,7 @@ const { expressjwt } = require('express-jwt');
 const { v4: uuidv4 } = require('uuid');
 // const cors = require('cors');
 const jwt = require("jsonwebtoken");
-const { ClientMessageType } = require("./socketType");
+const { SocketEventType, SocketEmitEventType } = require("./socketType");
 
 // WebSocket
 // require('./websocket');
@@ -32,9 +32,37 @@ httpServer.listen(3000);
 // Token secretKey
 const secretKey = 'DEMO';
 // 暫存用戶放置處
-const users = [];
+const users = [
+    {
+        uuid: uuidv4(),
+        username: "admin",
+        password: "a123456",
+        nickname: "系統"
+    },
+    {
+        uuid: uuidv4(),
+        username: "guest1",
+        password: "guest1",
+        nickname: "訪客1"
+    },
+    {
+        uuid: uuidv4(),
+        username: "guest2",
+        password: "guest2",
+        nickname: "訪客2"
+    },
+    {
+        uuid: uuidv4(),
+        username: "guest3",
+        password: "guest3",
+        nickname: "訪客3"
+    },
+];
+// 在線用戶
+const onlineUsers = [];
+// 所有訊息
 const messages = [
-    { name: "Majer", message: "Welcome!"  }
+    { id: 1, username: 'admin', nickname: "系統", message: "Welcome!", created_at: new Date().toISOString() }
 ]
 
 /**---------------------------------
@@ -57,9 +85,8 @@ const io = new Server(httpServer, {
 //           secretKey, //這是妳簽章的secret
 //           async (err, decoded) => {
 //             //認證失敗
-//             if (err) {
-//               return next(new Error('Authentication error'))
-//             }
+//             if (err) return next(new Error('Authentication error'));
+
 //             //認證成功
 //             socket.decoded = decoded // 把解出來資訊做利用
 //             console.log(decoded)
@@ -70,49 +97,58 @@ const io = new Server(httpServer, {
 //       }
 // })
 io.on("connection", (socket) => {
-    console.log('user connected')
-    // 發送之前的全部訊息
-    io.emit("allMessage", messages)
-    // 當此用戶發送訊息的時候，先把新訊息放到 messages 陣列裡面
-    // 再 emit 給所有用戶
-    socket.on("sendMessage", function (message) {
-        console.log(message)
-        messages.push(message)
-        io.emit("newMessage", message)
-    })
+    // allMessage: 向用戶發送之前的全部訊息
+    socket.emit(SocketEmitEventType.AllMessage, messages);
+    // onlineUsers: 向所有人廣播更新目前最新的線上用戶
+    socket.emit(SocketEmitEventType.OnlineUsers, onlineUsers);
 
-    // // 向所有人廣播更新目前最新的 Users
-    // const updateUsers = () => {
-    //     io.sockets.emit('users', users);
-    // }
+    // subscribe: 連線時訂閱用戶 
+    socket.on(SocketEventType.Subscribe, (uuid) => {
+        // 檢查 User
+        const user = users.find(data => data.uuid === uuid);
+        if(!user) return;
 
-    // // Create User
-    // socket.on(ClientMessageType.Login, (username) => {
-    //     if(users.indexOf(username) < 0) {
-    //         // 向 Client Side 發送訊息
-    //         socket.emit('chat', 'SERVER', '歡迎光臨 ' + username);
-    //         // Socket 設定 Client Username
-    //         socket.username = username;
-    //         // 插入新的 username 到 users
-    //         users.push(socket.username);
-    //         // 向所有人廣播更新目前最新的 Users
-    //         updateUsers();
-    //     }
-    // });
+        // Socket 訂閱 User
+        socket.user = user;
 
-    // // 向所有 Client 發送訊息
-    // socket.on(ClientMessageType.Message, (message) => {
-    //     io.sockets.emit('newMessage', { msg: message, nick: socket.username });
-    // });
+        // 檢查是否已在在線用戶名單上
+        const isInOnlineUser = onlineUsers.some(data => user.username === data.username);
+        if(!isInOnlineUser) {
+            // User 加入 Online 名單中
+            const userData = {
+                username: user.username,
+                nickname: user.nickname
+            }
+            onlineUsers.push(userData);
 
-    // Client 斷線
-    socket.on('disconnect', (data) => {
-        if (!socket.username) return;
+            // newOnlineUser: 向所有人發送新用戶訂閱
+            io.emit(SocketEmitEventType.NewOnlineUser, userData);
+        }
+    });
+
+    // sendMessage: 當此用戶發送訊息的時候，先把新訊息放到 messages 陣列裡面, 再 emit 給所有用戶
+    socket.on(SocketEventType.SendMessage, function (message) {
+        if(!socket.user) return;
+        // 重新封裝訊息
+        const userMessage = {
+            id: messages.length+1,
+            username: socket.user.username,
+            nickname: socket.user.nickname,
+            message: message,
+            created_at: new Date().toISOString()
+        }
+        // 把新訊息放到 messages 陣列裡面
+        messages.push(userMessage);
+        // emit 給所有用戶
+        io.emit("newMessage", userMessage);
+    });
+
+    // disconnect: Client 斷線
+    socket.on(SocketEventType.Disconnect, (data) => {
+        if (!socket.user) return;
         io.sockets.emit('chat', 'SERVER', socket.username + ' 離開了聊天室～');
-        // 移除 username 從 users
-        users.splice(users.indexOf(socket.username), 1);
-        // 向所有人廣播更新目前最新的 Users
-        updateUsers();
+        // 移除 username 從 Online Users
+        onlineUsers.splice(onlineUsers.indexOf(socket.user.username), 1);
     });
 });
 
@@ -222,7 +258,7 @@ app.post('/api/login', (req, res) => {
             token,
         });
     } catch(e) {
-        return res.status(400).send({
+        res.status(400).send({
             message: e.message,
         });
     }
@@ -237,14 +273,24 @@ app.post('/logout', (req, res) => {
 /** Get User Api */
 app.get("/user", (req, res) => {
     const auth = req.auth;
-	return res.status(200).send({
-		message: "獲取使用者資料成功",
-		data: {
-            uuid: auth.uuid,
-            username: auth.username,
-            nickname: auth.nickname
-        }
-	});
+
+    try {
+        const user = users.find(data => data.username === auth.username);
+        if(!user) throw new Error('查無用戶');
+
+        res.status(200).send({
+            message: "獲取使用者資料成功",
+            data: {
+                uuid: auth.uuid,
+                username: auth.username,
+                nickname: auth.nickname
+            }
+        });
+    } catch (error) {
+        res.status(401).send({
+            message: error.message,
+        });
+    }
 });
 
 // Http Respond
