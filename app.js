@@ -146,9 +146,13 @@ io.on("connection", (socket) => {
     // disconnect: Client 斷線
     socket.on(SocketEventType.Disconnect, (data) => {
         if (!socket.user) return;
-        io.sockets.emit('chat', 'SERVER', socket.username + ' 離開了聊天室～');
         // 移除 username 從 Online Users
-        onlineUsers.splice(onlineUsers.indexOf(socket.user.username), 1);
+        const findOnlineUserIndex = onlineUsers.findIndex(onlineUser => onlineUser.username === socket.user.username);
+        if (findOnlineUserIndex !== -1) {
+            onlineUsers.splice(findOnlineUserIndex, 1);
+        }
+        socket.user = undefined;
+        io.sockets.emit(SocketEmitEventType.RemoveOnlineUser, onlineUsers);
     });
 });
 

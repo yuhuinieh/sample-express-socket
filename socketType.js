@@ -20,6 +20,7 @@ const SocketEmitEventType = {
     AllMessage: 'allMessage',
     OnlineUsers: 'onlineUsers',
     NewOnlineUser: 'newOnlineUser',
+    RemoveOnlineUser: 'removeOnlineUser',
     NewMessage: 'newMessage'
 }
 
