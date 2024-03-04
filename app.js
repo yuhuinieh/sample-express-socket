@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 // const cors = require('cors');
 const jwt = require("jsonwebtoken");
 const { SocketEventType, SocketEmitEventType } = require("./socketType");
+const crypto = require('crypto');
 
 // WebSocket
 // require('./websocket');
@@ -18,7 +19,7 @@ app.use(cookieParser('123456'));
 app.use(express.json());
 
 const corsOptions = {
-    "origin": "http://127.0.0.1:5173",
+    "origin": "http://localhost:5173",
     "methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -65,6 +66,10 @@ const messages = [
     { id: 1, username: 'admin', nickname: "系統", message: "Welcome!", created_at: new Date().toISOString() }
 ]
 
+// Encrypted key and iv
+let iv;
+let sharedSecret;
+
 /**---------------------------------
  *  Socket.io
  *----------------------------------
@@ -73,7 +78,7 @@ const messages = [
 // Create Socket.io Server
 const io = new Server(httpServer, {
     cors: {
-      origin: ["http://127.0.0.1:5500", "http://127.0.0.1:5173"]
+      origin: ["http://127.0.0.1:5500", "http://localhost:5173"]
     }
 });
 
@@ -236,16 +241,48 @@ app.post('/api/register', (req, res) => {
     }
 })
 
+
+const splitChiperData = (encryptedData) => {
+    const [ivBase64, ciphertextBase64, authTag] = encryptedData.split(':');
+    const iv = Buffer.from(ivBase64, 'base64');
+    const chiperText = Buffer.from(ciphertextBase64, 'base64');
+    return {
+        iv,
+        chiperText,
+        authTag
+    }
+}
+
+// 解密資料
+const decryptedData = ({chiperText, iv, authTag}) => {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', sharedSecret, Buffer.from(iv, 'base64'));
+    decipher.setAuthTag(Buffer.from(authTag, 'base64'));
+    let decrypted = decipher.update(Buffer.from(chiperText, 'base64'));
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+    return decrypted.toString('utf8');
+}
 /** Login Api */
 app.post('/api/login', (req, res) => {
     const payload = req.body;
     const {username, password} = payload;
 
+    // 前端傳來的加密文字先拆開
+    const splitEncryptedPw = splitChiperData(password);
+    const { iv, chiperText, authTag } = splitEncryptedPw;
+    // 進行解密
+    const decryptedPassword = decryptedData({
+        chiperText,
+        iv,
+        authTag
+    });
+    console.log(`decryptedPassword: ${decryptedPassword}`);
+
     try {
         const user = users.find(data => data.username === username);
         if(!user) throw new Error('查無用戶');
     
-        if(user.password !== password) throw new Error('密碼錯誤');
+        if(user.password !== decryptedPassword) throw new Error('密碼錯誤');
         
         const userData = {
             uuid: user.uuid,
@@ -289,6 +326,35 @@ app.get("/user", (req, res) => {
                 username: auth.username,
                 nickname: auth.nickname
             }
+        });
+    } catch (error) {
+        res.status(401).send({
+            message: error.message,
+        });
+    }
+});
+
+const generateECDHKeyPair = () => {
+    const ecdh = crypto.createECDH('prime256v1'); // 指定橢圓曲線類型
+    ecdh.generateKeys();
+    return ecdh;
+}
+
+/** 交換 public key */
+app.post("/api/exchangekeys", (req, res) => {
+    const auth = req.auth;
+    const { publicKey } = req.body;
+
+    try {
+        // 產生 ECDH 密鑰對
+        const ecdh = generateECDHKeyPair();
+        // 使用前端提供的 public key 產生共享的 share key 存下來
+        sharedSecret = ecdh.computeSecret(Buffer.from(publicKey, 'base64'));
+
+        res.status(200).send({
+            message: "public key 交換成功",
+            // 把後端產生的 public key 換為 base64 格式傳給前端
+            publicKey: ecdh.getPublicKey().toString('base64')
         });
     } catch (error) {
         res.status(401).send({
