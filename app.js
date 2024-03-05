@@ -68,7 +68,7 @@ const messages = [
 
 // Encrypted key and iv
 let iv;
-let sharedSecret;
+let sharedKey;
 
 /**---------------------------------
  *  Socket.io
@@ -255,7 +255,7 @@ const splitChiperData = (encryptedData) => {
 
 // 解密資料
 const decryptedData = ({chiperText, iv, authTag}) => {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', sharedSecret, Buffer.from(iv, 'base64'));
+    const decipher = crypto.createDecipheriv('aes-256-gcm', sharedKey, Buffer.from(iv, 'base64'));
     decipher.setAuthTag(Buffer.from(authTag, 'base64'));
     let decrypted = decipher.update(Buffer.from(chiperText, 'base64'));
     decrypted = Buffer.concat([decrypted, decipher.final()]);
@@ -349,7 +349,7 @@ app.post("/api/exchangekeys", (req, res) => {
         // 產生 ECDH 密鑰對
         const ecdh = generateECDHKeyPair();
         // 使用前端提供的 public key 產生共享的 share key 存下來
-        sharedSecret = ecdh.computeSecret(Buffer.from(publicKey, 'base64'));
+        sharedKey = ecdh.computeSecret(Buffer.from(publicKey, 'base64'));
 
         res.status(200).send({
             message: "public key 交換成功",
